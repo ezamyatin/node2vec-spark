@@ -4,9 +4,13 @@ Billion-scale Node2Vec implementation with custom Word2Vec-SkipGram.
 
 ## Build and Run
 
-```console
+Build
+```
 sbt assembly
+```
 
+Run
+```
 spark-submit --master yarn \
 --deploy-mode cluster \
 --class RandomWalk \
@@ -22,4 +26,27 @@ friends_suggestion-assembly-1.0.jar \
 --p 1 \
 --q 10 \
 --checkpointInterval 10
+```
+
+```
+spark-submit --master yarn \
+--deploy-mode cluster \
+--class SkipGramRun \
+--driver-memory <driver memoroy> \
+--executor-memory <executor-memory> \
+--executor-cores <executor-cores> \
+--num-executors <num-executors> \
+--conf spark.task.cpus=<num threads> \
+friends_suggestion-assembly-1.0.jar \
+--input <input> \
+--output <output> \
+--dim 200 \
+--negative 10 \
+--window 2 \
+--epoch 10 \
+--alpha 0.025 \
+--minAlpha 0.0001 \
+--minCount 10 \
+--pow 0 \
+--checkpointInterval 30
 ```
