@@ -218,6 +218,7 @@ object SkipGram {
             if (i == s.length) {
               it.next()
               i = 0
+              skipped = 0
               v += 1
             }
           }
