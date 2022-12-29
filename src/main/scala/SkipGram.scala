@@ -118,7 +118,7 @@ object SkipGram {
             numPartitions: Int,
             numThread: Int): RDD[(Int, (Array[Int], Array[Int]))] = {
     sent.mapPartitions { it =>
-      ParItr.map(SkipGram.grouped(it, 1000000), numThread, numThread) { sG =>
+      ParItr.map(SkipGram.grouped(it, 1000000), numThread) { sG =>
         val l = Array.fill(numPartitions)(ArrayBuffer.empty[Int])
         val r = Array.fill(numPartitions)(ArrayBuffer.empty[Int])
 
