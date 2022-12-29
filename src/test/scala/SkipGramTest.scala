@@ -1,6 +1,7 @@
 import SkipGram.getPartition
 import com.holdenkarau.spark.testing.SharedSparkContext
-import org.apache.spark.SparkConf
+import org.apache.spark.{HashPartitioner, SparkConf}
+import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.storage.StorageLevel
 import org.scalatest.FunSuite
@@ -50,4 +51,46 @@ class SkipGramTest extends FunSuite with SharedSparkContext {
     //println(recs.toSeq)
     assert((0 to 20).intersect(recs.map(_._1)).length == 21)
   }
+
+  test("pairs") {
+    def pairs0(sent: RDD[Array[Int]],
+               inSeed: Int,
+               partitioner1: HashPartitioner,
+               partitioner2: HashPartitioner,
+               window: Int,
+               numPartitions: Int): RDD[(Int, (Array[Int], Array[Int]))] = {
+      sent.flatMap{s =>
+        s.indices.flatMap{i =>
+          (Math.max(0, i - window) to Math.min(s.length - 1, i + window))
+            .filter(j => s(i) != s(j) && partitioner1.getPartition(s(i)) == partitioner2.getPartition((s(j)))).map {j =>
+            partitioner1.getPartition(s(i)) -> (Array(s(i)) -> Array(s(j)))
+          }
+        }
+      }
+    }
+
+    val rnd = new java.util.Random(0)
+    val data = sc.parallelize((0 until 10000).map{_ => val x = rnd.nextInt(1000); (0 until 10).map(i => (x + i)  % 1000).toArray})
+    val numPartitions = 3
+
+    val partitioner1 = new HashPartitioner(numPartitions) {
+      override def getPartition(key: Any): Int = {
+        SkipGram.getPartition(key.asInstanceOf[Int], 123, numPartitions)
+      }
+    }
+    val partitioner2 = new HashPartitioner(numPartitions) {
+      override def getPartition(key: Any): Int = {
+        SkipGram.getPartition(key.asInstanceOf[Int], 124, numPartitions)
+      }
+    }
+    val a = SkipGram.pairs(data, 123, partitioner1, partitioner2, null, 2,
+      numPartitions).values.flatMap(e => e._1.zip(e._2)).collect().sorted
+    val b = pairs0(data, 123, partitioner1, partitioner2, 2,
+      numPartitions).values.flatMap(e => e._1.zip(e._2)).collect().sorted
+
+    assert(a.toSeq == b.toSeq)
+    println("OK!")
+
+  }
+
 }

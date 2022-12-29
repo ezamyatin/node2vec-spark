@@ -117,12 +117,15 @@ object SkipGram {
             partitioner2: HashPartitioner,
             sampleProbBC: Broadcast[Int2IntOpenHashMap],
             window: Int,
-            numPartitions: Int,
-            numThread: Int): RDD[(Int, (Array[Int], Array[Int]))] = {
-    sent.mapPartitions { it =>
-      ParItr.map(SkipGram.grouped(it, 1000000), numThread) { sG =>
-        val l = Array.fill(numPartitions)(ArrayBuffer.empty[Int])
-        val r = Array.fill(numPartitions)(ArrayBuffer.empty[Int])
+            numPartitions: Int): RDD[(Int, (Array[Int], Array[Int]))] = {
+
+    sent.mapPartitions { inIt =>
+      new Iterator[(Int, (Array[Int], Array[Int]))] {
+        val batchSize = 1000000 / numPartitions
+        val l = Array.fill(numPartitions)(new ArrayBuffer[Int](batchSize + 1))
+        val r = Array.fill(numPartitions)(new ArrayBuffer[Int](batchSize + 1))
+
+        val it = inIt.buffered
 
         val buffers1 = Array.fill(numPartitions)(new CyclicBuffer(window))
         val buffers2 = Array.fill(numPartitions)(new CyclicBuffer(window))
@@ -130,67 +133,136 @@ object SkipGram {
         var v = 0
         val random = new java.util.Random()
         var seed = inSeed
-        sG.foreach { s =>
-          var i = 0
-          var skipped = 0
-          random.setSeed(seed)
-          while (i < s.length) {
-            val prob = if (sampleProb != null && sampleProb.size() > 0) {
-              sampleProb.getOrDefault(s(i), Int.MaxValue)
-            } else {
-              Int.MaxValue
-            }
 
-            if (prob < Int.MaxValue && prob < random.nextInt()) {
-              skipped += 1
-            } else {
-              val a = partitioner1.getPartition(s(i))
-              val b = partitioner2.getPartition(s(i))
+        var filleda = -1
+        var filledb = -1
+        var lastPtr = 0
+        var nonEmptyCounter = 0
 
-              if (true) {
-                val buffer = buffers2(a)
-                buffer.checkVersion(v)
-                buffer.resetIter()
-                while (buffer.headInd() != -1 && buffer.headInd() >= (i - skipped) - window) {
-                  val w = buffer.headVal()
-                  if (s(i) != w) {
-                    l(a).append(s(i))
-                    r(a).append(w)
-                  }
+        var i = 0
+        var skipped = 0
 
-                  buffer.next()
-                }
+        override def hasNext: Boolean = {
+          it.hasNext || nonEmptyCounter > 0
+        }
+
+        def fill(): Unit = {
+          assert(filleda < 0 && filledb < 0)
+          while (it.hasNext && filleda < 0 && filledb < 0) {
+            random.setSeed(seed)
+            val s = it.head
+            while (i < s.length && filleda < 0 && filledb < 0) {
+              val prob = if (sampleProb != null && sampleProb.size() > 0) {
+                sampleProb.getOrDefault(s(i), Int.MaxValue)
+              } else {
+                Int.MaxValue
               }
 
-              if (true) {
-                val buffer = buffers1(b)
-                buffer.checkVersion(v)
-                buffer.resetIter()
-                while (buffer.headInd() != -1 && buffer.headInd() >= (i - skipped) - window) {
-                  val w = buffer.headVal()
-                  if (s(i) != w) {
-                    l(b).append(w)
-                    r(b).append(s(i))
-                  }
-                  buffer.next()
-                }
-              }
-              buffers1(a).checkVersion(v)
-              buffers1(a).push(s(i), i - skipped)
+              if (prob < Int.MaxValue && prob < random.nextInt()) {
+                skipped += 1
+              } else {
+                val a = partitioner1.getPartition(s(i))
+                val b = partitioner2.getPartition(s(i))
 
-              buffers2(b).checkVersion(v)
-              buffers2(b).push(s(i), i - skipped)
+                if (true) {
+                  val buffer = buffers2(a)
+                  buffer.checkVersion(v)
+                  buffer.resetIter()
+                  while (buffer.headInd() != -1 && buffer.headInd() >= (i - skipped) - window) {
+                    val w = buffer.headVal()
+                    if (s(i) != w) {
+                      if (l(a).isEmpty) {
+                        nonEmptyCounter += 1
+                      }
+
+                      l(a).append(s(i))
+                      r(a).append(w)
+
+                      filleda = if (l(a).length < batchSize - 1) -1 else a
+                    }
+
+                    buffer.next()
+                  }
+                }
+
+                if (true) {
+                  val buffer = buffers1(b)
+                  buffer.checkVersion(v)
+                  buffer.resetIter()
+                  while (buffer.headInd() != -1 && buffer.headInd() >= (i - skipped) - window) {
+                    val w = buffer.headVal()
+                    if (s(i) != w) {
+                      if (l(b).isEmpty) {
+                        nonEmptyCounter += 1
+                      }
+
+                      l(b).append(w)
+                      r(b).append(s(i))
+
+                      filledb = if (l(b).length < batchSize - 1) -1 else b
+                    }
+                    buffer.next()
+                  }
+                }
+
+                buffers1(a).checkVersion(v)
+                buffers1(a).push(s(i), i - skipped)
+
+                buffers2(b).checkVersion(v)
+                buffers2(b).push(s(i), i - skipped)
+              }
+              seed = seed * 239017 + s(i)
+              i += 1
             }
-            seed = seed * 239017 + s(i)
-            i += 1
+
+            if (i == s.length) {
+              it.next()
+              i = 0
+              v += 1
+            }
           }
-          v += 1
         }
-        (0 until numPartitions).map{i =>
-          shuffle(l(i), r(i), random)
-          i -> (l(i).toArray, r(i).toArray)
+
+        override def next(): (Int, (Array[Int], Array[Int])) = {
+          while (it.hasNext && filleda < 0 && filledb < 0) {
+            fill()
+          }
+
+          if (filleda >= 0) {
+            shuffle(l(filleda), r(filleda), random)
+            val res = (filleda, (l(filleda).toArray, r(filleda).toArray))
+            l(filleda).clear()
+            r(filleda).clear()
+            filleda = -1
+            nonEmptyCounter -= 1
+            res
+          } else if (filledb >= 0) {
+            shuffle(l(filledb), r(filledb), random)
+            val res = (filledb, (l(filledb).toArray, r(filledb).toArray))
+            l(filledb).clear()
+            r(filledb).clear()
+            filledb = -1
+            nonEmptyCounter -= 1
+            res
+          } else {
+            var res = null.asInstanceOf[(Int, (Array[Int], Array[Int]))]
+            while (lastPtr < l.length && res == null) {
+              if (l(lastPtr).nonEmpty) {
+                shuffle(l(lastPtr), r(lastPtr), random)
+
+                res = (lastPtr, (l(lastPtr).toArray, r(lastPtr).toArray))
+                nonEmptyCounter -= 1
+                //l(lastPtr).clear()
+                //r(lastPtr).clear()
+              }
+              lastPtr += 1
+            }
+
+            //assert(res != null)
+            res
+          }
         }
-      }.flatten
+      }
     }
   }
 
@@ -384,7 +456,7 @@ class SkipGram extends Serializable with Logging {
       sc.broadcast(sampleProb)
     }
 
-    val sent = cacheAndCount(dataset.repartition(numPartitions * 5))
+    val sent = cacheAndCount(dataset.repartition(numPartitions))
     val expTable = sc.broadcast(createExpTable())
     val partTable = sc.broadcast(createPartTable(numPartitions))
 
@@ -457,7 +529,7 @@ class SkipGram extends Serializable with Logging {
         val embR = emb.map(x => x._1 -> (x._2._1, x._2._3)).partitionBy(partitioner2)
 
         val cur = pairs(sent, curEpoch * numPartitions + pI, partitioner1, partitioner2, sampleProbBC, window,
-          numPartitions, numThread).partitionBy(partitionerKey).values
+          numPartitions).partitionBy(partitionerKey).values
 
         val loss = sc.doubleAccumulator
         val lossN = sc.longAccumulator
@@ -506,8 +578,8 @@ class SkipGram extends Serializable with Logging {
           rSyn1Neg.clear()
           val lExpTable = expTable.value
           val random = new java.util.Random(seed)
-          var llLoss = new AtomicDouble()
-          var llLossN = new AtomicLong()
+          val llLoss = new AtomicDouble(0)
+          val llLossN = new AtomicLong(0)
 
           ParItr.foreach(sIt, numThread)({ case ((l, r)) =>
             var lLoss = 0.0
@@ -601,9 +673,6 @@ class SkipGram extends Serializable with Logging {
       if (checkpointInterval > 0) {
         emb = checkpoint(emb, checkpointPath + "/" + curEpoch)(sent.sparkContext)
       }
-
-      sent.unpersist()
-      emb
     }
     emb
   }
