@@ -611,7 +611,6 @@ case class SkipGramParams(input: String = null,
                           alpha: Double = 0.025,
                           minAlpha: Option[Double] = None,
                           minCount: Int = 5,
-                          sameOverhead: Int = 0,
                           sample: Option[Double] = None,
                           pow: Option[Double] = None,
                           checkpointInterval: Int = 0) {
