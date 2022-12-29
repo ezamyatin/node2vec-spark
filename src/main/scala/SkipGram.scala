@@ -1,4 +1,5 @@
 import java.util.Random
+import java.util.concurrent.atomic.AtomicLong
 
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
@@ -9,6 +10,7 @@ import util.{CyclicBuffer, ParItr, SparkApp}
 import scala.collection.mutable.ArrayBuffer
 import scala.util.Try
 import com.github.fommil.netlib.BLAS.{getInstance => blas}
+import com.google.common.util.concurrent.AtomicDouble
 import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
@@ -504,6 +506,8 @@ class SkipGram extends Serializable with Logging {
           rSyn1Neg.clear()
           val lExpTable = expTable.value
           val random = new java.util.Random(seed)
+          var llLoss = new AtomicDouble()
+          var llLossN = new AtomicLong()
 
           ParItr.foreach(sIt, numThread)({ case ((l, r)) =>
             var lLoss = 0.0
@@ -566,9 +570,12 @@ class SkipGram extends Serializable with Logging {
               }
               pos += 1
             }
-            loss.synchronized(loss.add(lLoss))
-            lossN.synchronized(lossN.add(lLossN))
+            llLoss.addAndGet(lLoss)
+            llLossN.addAndGet(lLossN)
           })
+
+          loss.add(llLoss.get())
+          lossN.add(llLossN.get())
 
           vocabL.int2IntEntrySet().fastIterator().asScala.map { e =>
             val k = e.getIntKey
