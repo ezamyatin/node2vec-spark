@@ -34,7 +34,7 @@ spark-submit --master yarn \
 --class SkipGramRun \
 --driver-memory <driver memoroy> \
 --executor-memory <executor-memory> \
---executor-cores <executor-cores> \
+--executor-cores <num threads> \
 --num-executors <num-executors> \
 --conf spark.task.cpus=<num threads> \
 friends_suggestion-assembly-1.0.jar \
