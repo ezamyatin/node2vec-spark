@@ -457,7 +457,7 @@ class SkipGram extends Serializable with Logging {
       sc.broadcast(sampleProb)
     }
 
-    val sent = cacheAndCount(dataset.repartition(numPartitions))
+    val sent = cacheAndCount(dataset.repartition(numPartitions * numThread))
     val expTable = sc.broadcast(createExpTable())
     val partTable = sc.broadcast(createPartTable(numPartitions))
 
