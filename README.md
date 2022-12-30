@@ -2,6 +2,24 @@
 
 Billion-scale Node2Vec implementation with custom Word2Vec-SkipGram.
 
+## Benchmark
+* Number of vertices: 100M
+* Total walks length: 250B
+* Allocated resources: 1250 cores, 3.7Tb RAM
+
+**RandomWalk:**
+  * num-walks: 25
+  * length: 100
+  * running-time: **5h**
+
+**SkipGram:**
+  * epochs: 5
+  * window-size: 2
+  * negative: 10
+  * dim: 128
+  * running-time: **80h**
+  
+
 ## Build and Run
 
 Build
@@ -24,7 +42,7 @@ friends_suggestion-assembly-1.0.jar \
 --numWalks 25 \
 --length 100 \
 --p 1 \
---q 10 \
+--q 1 \
 --checkpointInterval 10
 ```
 
@@ -40,13 +58,14 @@ spark-submit --master yarn \
 friends_suggestion-assembly-1.0.jar \
 --input <input> \
 --output <output> \
---dim 200 \
---negative 10 \
---window 2 \
---epoch 10 \
---alpha 0.025 \
---minAlpha 0.0001 \
---minCount 10 \
---pow 0 \
---checkpointInterval 30
+--dim <dim> \
+--negative <negative> \
+--window <window> \
+--epoch <epoch> \
+--alpha <alpha> \
+--minAlpha <minAlpha> \
+--minCount <minCount> \
+--pow <pow> \
+--sample <sample> \
+--checkpointInterval <checkpointInterval> \
 ```
