@@ -34,7 +34,9 @@ class SkipGramTest extends FunSuite with SharedSparkContext {
       .setLearningRate(0.025)
       .setMinLearningRate(Some(0.00001))
       .setMinCount(0)
-      .setSample(1e-4)
+      .setSamplingMode(SkipGram.SamplingMode.WINDOW)
+      .setUseBias(false)
+      .setLambda(0.0001)
       .setIntermediateRDDStorageLevel(StorageLevel.DISK_ONLY_2)
       .setNumThread(numCores)
       .setNumPartitions(numExecutors)
@@ -83,8 +85,8 @@ class SkipGramTest extends FunSuite with SharedSparkContext {
         SkipGram.getPartition(key.asInstanceOf[Int], 124, numPartitions)
       }
     }
-    val a = SkipGram.pairs(data, 123, partitioner1, partitioner2, null, 2,
-      numPartitions).values.flatMap(e => e._1.zip(e._2)).collect().sorted
+    val a = data.mapPartitions(SkipGram.pairsWindow(_, SkipGram.SamplingMode.WINDOW, 123, partitioner1, partitioner2, 2,
+      numPartitions)).values.flatMap(e => e._1.zip(e._2)).collect().sorted
     val b = pairs0(data, 123, partitioner1, partitioner2, 2,
       numPartitions).values.flatMap(e => e._1.zip(e._2)).collect().sorted
 
